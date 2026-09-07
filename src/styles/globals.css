@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-devanagari: "Noto Sans Devanagari", ui-serif, serif;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"],
+:root.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ivory text-maroon-700 antialiased;
+  background-color: #fbf7ee;
+}
+
+.dark body {
+  background-color: #171310;
+  color: #f5eedd;
+}
+
+/* Focus rings — kept visible everywhere for accessibility (the spec calls
+   for keyboard support + accessible labels throughout). */
+:focus-visible {
+  outline: 3px solid #2e7370;
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Utility: a "tracing paper" guide line, reused by the pitch-contour canvas overlay legend. */
+.veda-guide-line {
+  background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
