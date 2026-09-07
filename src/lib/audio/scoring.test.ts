@@ -55,6 +55,21 @@ describe("scoreAttempt", () => {
     expect(score.intonationAccuracy).toBeLessThan(20);
   });
 
+  it("still scores intonation highly when the student follows the melody shape but sings consistently sharp/flat (within a whole step)", () => {
+    const reference = [0, 0, 50, 50, 100, 100, 50, 50, 0, 0];
+    const consistentlyFlatByAWholeStep = reference.map((c) => c - 180);
+    const score = scoreAttempt(reference, consistentlyFlatByAWholeStep, reference.length);
+    expect(score.intonationAccuracy).toBeGreaterThan(90);
+  });
+
+  it("still scores a genuinely wrong shape low on intonation even after allowing for a consistent offset", () => {
+    const reference = [0, 0, 50, 50, 100, 100, 50, 50, 0, 0];
+    // Flat by a whole step (forgiven) but also wandering unpredictably — the wandering should still cost points.
+    const wandering = [-180, 40, -220, 90, -140, 260, -190, -10, -170, 210];
+    const score = scoreAttempt(reference, wandering, reference.length);
+    expect(score.intonationAccuracy).toBeLessThan(60);
+  });
+
   it("scores phrase completion low when the student stops early", () => {
     const reference = new Array(20).fill(0);
     const student = [0, 0, 0]; // stopped after 3 of 20 expected frames

@@ -72,6 +72,15 @@ export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
 };
 
 /**
+ * The largest *consistent* sharp/flat offset (in cents) we'll silently
+ * forgive when scoring intonation — see the comment inside scoreAttempt().
+ * 200 cents is one whole step: generous enough to cover an untrained voice
+ * or an imperfect scale match from calibration, small enough that being
+ * off by more than this still meaningfully lowers the score.
+ */
+const MAX_BASELINE_CORRECTION_CENTS = 200;
+
+/**
  * Computes the full score breakdown for one practice attempt.
  *
  * @param referenceCents  Teacher's pitch contour, expressed as cents relative
@@ -101,14 +110,36 @@ export function scoreAttempt(
   const alignment = dynamicTimeWarp(referenceCents, studentCents);
 
   // Intonation: average "goodness" (1 for green, partial for amber, 0 for red/grey) over the aligned path.
+  //
+  // Before classifying, we correct for the student's own voice being
+  // *consistently* a bit sharp or flat of the exact reference tone (up to
+  // a whole step — see MAX_BASELINE_CORRECTION_CENTS). Reference audio is
+  // presently a machine-generated tone, and even a real teacher recording
+  // won't land at millimetre-precise Hz for every learner's voice — what
+  // actually matters for Vedic svara accuracy is whether the *shape*
+  // (the rises/falls between udātta/anudātta/svarita) is followed, not
+  // whether the student's overall register is a laboratory-exact match.
+  // Without this, a student who chants the melody shape perfectly but is
+  // generally a little sharp/flat throughout would score 0% every time,
+  // which both misrepresents their accuracy and breaks this product's
+  // "always gentle, never harsh" feedback requirement.
+  const octaveNormalisedDiffs: number[] = [];
+  for (const [ri, si] of alignment.path) {
+    const r = referenceCents[ri];
+    const s = studentCents[si];
+    if (r === null || s === null) continue;
+    octaveNormalisedDiffs.push(normaliseOctaveDiff(s - r, tolerance.octaveToleranceEnabled));
+  }
+  const baselineOffsetCents = clampMagnitude(median(octaveNormalisedDiffs), MAX_BASELINE_CORRECTION_CENTS);
+
   let intonationSum = 0;
   let intonationCount = 0;
   for (const [ri, si] of alignment.path) {
     const r = referenceCents[ri];
     const s = studentCents[si];
     if (r === null || s === null) continue;
-    const diff = s - r;
-    const colour = classifyPitchDifference(diff, tolerance);
+    const diff = normaliseOctaveDiff(s - r, tolerance.octaveToleranceEnabled) - baselineOffsetCents;
+    const colour = classifyPitchDifference(diff, { ...tolerance, octaveToleranceEnabled: false });
     intonationSum += colour === "green" ? 1 : colour === "amber" ? 0.5 : 0;
     intonationCount++;
   }
@@ -175,6 +206,21 @@ export function encouragingMessageFor(score: ScoreBreakdown): string {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+function clampMagnitude(value: number, maxAbs: number): number {
+  return Math.max(-maxAbs, Math.min(maxAbs, value));
+}
+/** Folds a pitch difference to within +/-600 cents of the nearest octave multiple, when octave tolerance is enabled. */
+function normaliseOctaveDiff(differenceCents: number, octaveToleranceEnabled: boolean): number {
+  if (!octaveToleranceEnabled) return differenceCents;
+  const nearestOctaveMultiple = Math.round(differenceCents / 1200) * 1200;
+  return differenceCents - nearestOctaveMultiple;
+}
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
