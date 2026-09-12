@@ -14,7 +14,12 @@ import { getDataProvider, type LessonContent } from "@/lib/data/provider";
 import type { CourseScale } from "@/lib/audio/scaleMapping";
 import { COURSE_SCALES, SCALE_ROOT_FREQUENCY_HZ } from "@/lib/audio/scaleMapping";
 import { smoothPitchTrack } from "@/lib/audio/smoothing";
-import { buildReferenceCentsTrack, buildStudentCentsTrack, flattenPhraseSyllables } from "@/lib/audio/referenceTrack";
+import {
+  buildReferenceCentsTrack,
+  buildStudentCentsTrack,
+  flattenPhraseSyllables,
+  DEFAULT_FRAME_INTERVAL_SEC,
+} from "@/lib/audio/referenceTrack";
 import { scoreAttempt, encouragingMessageFor, computeSyllableFeedback, type ScoreBreakdown, type FeedbackColour } from "@/lib/audio/scoring";
 import type { LessonMode, ScaleCalibration } from "@/lib/data/types";
 
@@ -27,6 +32,12 @@ const MODES: Array<{ id: LessonMode; label: string; description: string }> = [
 ];
 
 const SLOW_RATES = [0.6, 0.75, 0.9] as const;
+
+// How long the "Get ready… 3, 2, 1" pause lasts before a guided attempt starts
+// actually listening/recording — without this, practice modes used to jump
+// straight from clicking "Start" into playback/recording with zero warning,
+// which is why it felt "impossible to tell when to start chanting".
+const GET_READY_SECONDS = 3;
 
 export default function LessonPlayerPage({ params }: { params: { lessonId: string } }) {
   const router = useRouter();
@@ -42,13 +53,15 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
   // hard-coded) so a future multi-phrase lesson only needs UI to change it, not new plumbing.
   const phraseIndex = 0;
   const [currentTimeSec, setCurrentTimeSec] = useState<number | null>(null);
-  const [status, setStatus] = useState<"idle" | "listening" | "capturing" | "scoring" | "done">("idle");
+  const [status, setStatus] = useState<"idle" | "get_ready" | "listening" | "capturing" | "scoring" | "done">("idle");
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [getReadyCountdown, setGetReadyCountdown] = useState<number | null>(null);
   const [result, setResult] = useState<{ score: ScoreBreakdown; message: string; feedback: Map<string, FeedbackColour> } | null>(null);
   const [liveStudentCents, setLiveStudentCents] = useState<Array<number | null>>([]);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const getReadyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     getDataProvider()
@@ -76,11 +89,47 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
 
   const referenceCents = useMemo(() => (phrase ? buildReferenceCentsTrack(phrase, syllables) : []), [phrase, syllables]);
 
+  // The actual live playhead time, in seconds from lesson start — currentTimeSec is
+  // kept up to date by the <audio> element's onTimeUpdate while listening/capturing,
+  // and by the countdown timer for mic-only capture (independent practice / the
+  // repeat window of listen & repeat). Falls back to the <audio> element directly for
+  // the first tick before onTimeUpdate has fired.
+  const livePlayheadAbsSec =
+    status === "listening" || status === "capturing" ? currentTimeSec ?? audioRef.current?.currentTime ?? null : null;
+  // Same value, but relative to the start of the phrase — what TracingPaper and
+  // PitchContourCanvas both expect, since their data (syllable times, reference
+  // contour frames) is indexed from phrase start, not from zero.
+  const playheadRelativeSec =
+    livePlayheadAbsSec !== null && phrase ? livePlayheadAbsSec - phrase.startTimeSec : null;
+
   function resetAttempt() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (getReadyTimerRef.current) clearInterval(getReadyTimerRef.current);
+    timerRef.current = null;
+    getReadyTimerRef.current = null;
     setResult(null);
     setLiveStudentCents([]);
     setStatus("idle");
     setCurrentTimeSec(null);
+    setGetReadyCountdown(null);
+  }
+
+  /** Runs a short visible "Get ready… 3, 2, 1" pause, then calls onDone. */
+  function runGetReady(onDone: () => void) {
+    setStatus("get_ready");
+    let remaining = GET_READY_SECONDS;
+    setGetReadyCountdown(remaining);
+    getReadyTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        if (getReadyTimerRef.current) clearInterval(getReadyTimerRef.current);
+        getReadyTimerRef.current = null;
+        setGetReadyCountdown(null);
+        onDone();
+      } else {
+        setGetReadyCountdown(remaining);
+      }
+    }, 1000);
   }
 
   async function playListenOnly() {
@@ -102,11 +151,13 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       pitchStream.clearFrames();
       const audio = audioRef.current;
       if (!audio) return;
-      setStatus("capturing");
-      audio.currentTime = phrase.startTimeSec;
-      audio.playbackRate = mode === "slow_practice" ? slowRate : 1;
-      audio.preservesPitch = true;
-      await audio.play();
+      runGetReady(async () => {
+        setStatus("capturing");
+        audio.currentTime = phrase.startTimeSec;
+        audio.playbackRate = mode === "slow_practice" ? slowRate : 1;
+        audio.preservesPitch = true;
+        await audio.play();
+      });
       return; // scoring happens on the audio "ended" handler below
     }
 
@@ -123,8 +174,10 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
     if (mode === "independent_practice") {
       await pitchStream.start();
       pitchStream.clearFrames();
-      setStatus("capturing");
-      startCountdownCapture(phraseDurationSec);
+      runGetReady(() => {
+        setStatus("capturing");
+        startCountdownCapture(phraseDurationSec);
+      });
     }
   }
 
@@ -150,9 +203,11 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
     if (mode === "listen_and_repeat" && status === "listening") {
       await pitchStream.start();
       pitchStream.clearFrames();
-      setStatus("capturing");
-      setCurrentTimeSec(phrase?.startTimeSec ?? 0);
-      startCountdownCapture(phraseDurationSec);
+      runGetReady(() => {
+        setStatus("capturing");
+        setCurrentTimeSec(phrase?.startTimeSec ?? 0);
+        startCountdownCapture(phraseDurationSec);
+      });
       return;
     }
     if (mode === "chant_along" || mode === "slow_practice") {
@@ -209,7 +264,11 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
   }
 
   useEffect(() => {
-    return () => pitchStream.stop();
+    return () => {
+      pitchStream.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (getReadyTimerRef.current) clearInterval(getReadyTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -306,6 +365,15 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
           <p className="mt-3 text-sm text-maroon-500">{MODES.find((m) => m.id === mode)?.description}</p>
         </Card>
 
+        {/* Get ready countdown — shown right before listening/recording begins, so
+            there's always a clear beat of warning before anything starts. */}
+        {status === "get_ready" && (
+          <div className="mt-6 flex flex-col items-center justify-center rounded-2xl bg-saffron-100 py-8 text-center animate-pulse">
+            <p className="font-display text-xs uppercase tracking-wide text-maroon-500">Get ready…</p>
+            <p className="font-display text-4xl text-maroon-700">{getReadyCountdown}</p>
+          </div>
+        )}
+
         {/* Tracing paper */}
         {phrase && (
           <div className="mt-6">
@@ -314,7 +382,7 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
               displayMode={profile.preferredDisplayMode}
               textSizeScale={profile.textSizeScale}
               showMeaning={profile.showMeaning}
-              currentTimeSec={currentTimeSec ?? (status === "listening" ? audioRef.current?.currentTime ?? null : null)}
+              currentTimeSec={livePlayheadAbsSec}
               feedback={result?.feedback}
             />
           </div>
@@ -322,7 +390,12 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
 
         {/* Pitch contour */}
         <div className="mt-6">
-          <PitchContourCanvas referenceCents={referenceCents} studentCents={liveStudentCents} />
+          <PitchContourCanvas
+            referenceCents={referenceCents}
+            studentCents={liveStudentCents}
+            playheadTimeSec={playheadRelativeSec}
+            frameIntervalSec={DEFAULT_FRAME_INTERVAL_SEC}
+          />
         </div>
 
         {/* Controls */}
@@ -332,14 +405,20 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
               {status === "listening" ? "Playing…" : "Play"}
             </Button>
           ) : (
-            <Button size="lg" onClick={runGuidedAttempt} disabled={status === "listening" || status === "capturing" || status === "scoring"}>
-              {status === "capturing"
-                ? `Recording… ${countdown ?? ""}s`
-                : status === "scoring"
-                  ? "Scoring…"
-                  : status === "listening"
-                    ? "Listen first…"
-                    : "Start"}
+            <Button
+              size="lg"
+              onClick={runGuidedAttempt}
+              disabled={status === "get_ready" || status === "listening" || status === "capturing" || status === "scoring"}
+            >
+              {status === "get_ready"
+                ? `Get ready… ${getReadyCountdown ?? ""}`
+                : status === "capturing"
+                  ? `Recording… ${countdown ?? ""}s`
+                  : status === "scoring"
+                    ? "Scoring…"
+                    : status === "listening"
+                      ? "Listen first…"
+                      : "Start"}
             </Button>
           )}
           <Button size="lg" variant="ghost" onClick={resetAttempt}>
@@ -374,7 +453,14 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
           src={audioForScale?.audioUrl}
           onEnded={handleAudioEnded}
           onTimeUpdate={(e) => {
-            if (mode === "listen" || status === "listening") setCurrentTimeSec(e.currentTarget.currentTime);
+            // Previously this only fired for "listening" — meaning the tracing-paper
+            // highlight and pitch-contour playhead completely froze during the actual
+            // chant-along/slow-practice recording, which is a big part of why it felt
+            // "impossible to tell when to start chanting". Now it keeps updating
+            // through "capturing" too, since the <audio> element is still playing then.
+            if (mode === "listen" || status === "listening" || status === "capturing") {
+              setCurrentTimeSec(e.currentTarget.currentTime);
+            }
           }}
           preload="auto"
         />

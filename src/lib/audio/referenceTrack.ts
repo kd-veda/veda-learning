@@ -11,7 +11,10 @@ import { centsBetween } from "./noteMapping";
 
 export type FlatSyllable = Syllable;
 
-const DEFAULT_FRAME_INTERVAL_SEC = 0.05;
+// Exported so callers that need to convert a wall-clock time into an index into
+// the tracks below (e.g. drawing a moving "now" playhead on top of the reference
+// contour) sample at the same rate this module uses to build the track.
+export const DEFAULT_FRAME_INTERVAL_SEC = 0.05;
 
 /** Samples the teacher's target pitch contour across a phrase at a fixed frame rate, in cents relative to the tonic. */
 export function buildReferenceCentsTrack(
