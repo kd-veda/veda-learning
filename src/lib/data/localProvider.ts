@@ -43,6 +43,14 @@ import {
   seedSyllables,
   seedWords,
 } from "@/content/ganapati-prarthana";
+import {
+  rudramOpeningChant,
+  rudramOpeningLesson,
+  rudramOpeningLessonAudio,
+  rudramOpeningPhrases,
+  rudramOpeningSyllables,
+  rudramOpeningWords,
+} from "@/content/rudram-opening";
 
 const STORAGE_KEY = "veda-learning:local-db:v1";
 const GUEST_PROFILE_ID = "local-guest";
@@ -100,12 +108,12 @@ function buildSeedDb(): LocalDb {
         published: true,
       },
     ],
-    chants: [seedChant],
-    lessons: [seedLesson],
-    phrases: [...seedPhrases],
-    words: [...seedWords],
-    syllables: [...seedSyllables],
-    lessonAudio: [...seedLessonAudio],
+    chants: [seedChant, rudramOpeningChant],
+    lessons: [seedLesson, rudramOpeningLesson],
+    phrases: [...seedPhrases, ...rudramOpeningPhrases],
+    words: [...seedWords, ...rudramOpeningWords],
+    syllables: [...seedSyllables, ...rudramOpeningSyllables],
+    lessonAudio: [...seedLessonAudio, ...rudramOpeningLessonAudio],
     pitchContours: [],
     calibrations: [],
     enrolments: [],

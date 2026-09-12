@@ -175,4 +175,13 @@ export const seedLessonAudio: LessonAudio[] = [
     isPlaceholder: true,
     uploadedAt: new Date(0).toISOString(),
   },
+  {
+    id: "seed-audio-gsharp",
+    lessonId: GANAPATI_LESSON_ID,
+    scale: "G#",
+    audioUrl: "/audio/ganapati-prarthana/placeholder-scale-gsharp.wav",
+    durationSec: 4.5,
+    isPlaceholder: true,
+    uploadedAt: new Date(0).toISOString(),
+  },
 ];

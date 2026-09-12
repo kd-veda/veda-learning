@@ -3,7 +3,7 @@ import { DEFAULT_SCALE_MAPPING, isValidScaleMapping, recommendScale } from "./sc
 import type { PitchClass } from "./noteMapping";
 
 describe("recommendScale — matches the product brief's initial table", () => {
-  const expected: Record<string, "B" | "D" | "F"> = {
+  const expected: Record<string, "B" | "D" | "F" | "G#"> = {
     A: "B",
     "A#": "B",
     B: "B",
@@ -14,8 +14,8 @@ describe("recommendScale — matches the product brief's initial table", () => {
     E: "F",
     F: "F",
     "F#": "F",
-    G: "F",
-    "G#": "F",
+    G: "G#",
+    "G#": "G#",
   };
 
   for (const [pitchClass, scale] of Object.entries(expected)) {

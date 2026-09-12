@@ -1,21 +1,26 @@
 /**
  * Configurable mapping from a student's detected comfortable pitch class to
- * one of the three course scales the platform records lessons in (B, D, F).
+ * one of the course scales the platform records lessons in.
  *
  * This is intentionally NOT hard-coded into the calibration flow — the
  * defaults below match the spec's initial table, but an admin can override
  * them from the admin "Configuration" page (see src/lib/config/appConfig.ts
  * for how this merges with any admin override stored in the database).
+ *
+ * G# was added alongside the original B/D/F set so students whose
+ * comfortable pitch sits at G or G# can be routed to a scale that actually
+ * matches a teacher's recording made at G# (rather than being pushed to the
+ * nearest of the original three, which could be up to a whole step off).
  */
 
 import type { PitchClass } from "./noteMapping";
 
-export const COURSE_SCALES = ["B", "D", "F"] as const;
+export const COURSE_SCALES = ["B", "D", "F", "G#"] as const;
 export type CourseScale = (typeof COURSE_SCALES)[number];
 
 export type ScaleMapping = Record<PitchClass, CourseScale>;
 
-/** The initial recommendation mapping specified in the product brief. */
+/** The initial recommendation mapping specified in the product brief, extended with G#. */
 export const DEFAULT_SCALE_MAPPING: ScaleMapping = {
   A: "B",
   "A#": "B",
@@ -27,8 +32,8 @@ export const DEFAULT_SCALE_MAPPING: ScaleMapping = {
   E: "F",
   F: "F",
   "F#": "F",
-  G: "F",
-  "G#": "F",
+  G: "G#",
+  "G#": "G#",
 };
 
 /** Looks up the recommended course scale for a detected pitch class. */
@@ -43,12 +48,24 @@ export function recommendScale(
  * Tonic (root) frequency recorded for each course scale's reference audio.
  * Used to express both the teacher's target contour and the student's live
  * pitch as cents-relative-to-tonic so they're directly comparable regardless
- * of absolute register. Mirrors scripts/generate-test-tones.mjs.
+ * of absolute register.
+ *
+ * These are measured from the first real teacher recordings supplied for
+ * the platform (the "Om Namo Bhagavate Rudraya" opening line, one take per
+ * scale) — specifically the median pitch of each take's sustained "Oṃ".
+ * They replace an earlier set of invented placeholder values used only for
+ * the synthetic demo tones (see scripts/generate-test-tones.mjs, which is
+ * kept in sync with these same numbers so that demo stays internally
+ * consistent). Each lands close to its intended pitch-class bucket in
+ * DEFAULT_SCALE_MAPPING (B ≈ A#2, D ≈ C#3, F ≈ F3, G# ≈ G3/G#3), each
+ * roughly a minor third apart — a good sign the four takes are consistent
+ * with each other and with how calibration buckets pitches.
  */
 export const SCALE_ROOT_FREQUENCY_HZ: Record<CourseScale, number> = {
-  B: 246.94, // B3
-  D: 293.66, // D4
-  F: 349.23, // F4
+  B: 116.96,
+  D: 140.64,
+  F: 171.02,
+  "G#": 201.26,
 };
 
 /** Validates that a (possibly admin-edited) mapping still covers every pitch class with a valid scale. */

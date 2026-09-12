@@ -30,7 +30,7 @@ describe("localProvider — guest mode + demo lesson flow", () => {
     expect(content!.chant.title).toContain("Gaṇapati");
     expect(content!.chant.isPlaceholderContent).toBe(true);
     expect(content!.phrases.length).toBeGreaterThan(0);
-    expect(content!.audio.map((a) => a.scale).sort()).toEqual(["B", "D", "F"]);
+    expect(content!.audio.map((a) => a.scale).sort()).toEqual(["B", "D", "F", "G#"]);
   });
 
   it("saves and retrieves a calibration for the guest profile", async () => {

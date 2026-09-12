@@ -112,7 +112,7 @@ create table if not exists syllables (
 create table if not exists lesson_audio (
   id uuid primary key default gen_random_uuid(),
   lesson_id uuid not null references lessons (id) on delete cascade,
-  scale text not null check (scale in ('B', 'D', 'F')),
+  scale text not null check (scale in ('B', 'D', 'F', 'G#')),
   audio_url text not null,
   duration_sec numeric not null default 0,
   is_placeholder boolean not null default true,
@@ -135,8 +135,8 @@ create table if not exists scale_calibrations (
   profile_id uuid not null references profiles (id) on delete cascade,
   detected_frequency_hz numeric not null,
   detected_pitch_class text not null,
-  recommended_scale text not null check (recommended_scale in ('B', 'D', 'F')),
-  selected_scale text not null check (selected_scale in ('B', 'D', 'F')),
+  recommended_scale text not null check (recommended_scale in ('B', 'D', 'F', 'G#')),
+  selected_scale text not null check (selected_scale in ('B', 'D', 'F', 'G#')),
   is_manual_override boolean not null default false,
   confidence numeric not null default 0,
   created_at timestamptz not null default now()
@@ -170,7 +170,7 @@ create table if not exists practice_attempts (
     mode in ('listen', 'listen_and_repeat', 'chant_along', 'independent_practice', 'slow_practice')
   ),
   playback_rate numeric not null default 1,
-  scale text not null check (scale in ('B', 'D', 'F')),
+  scale text not null check (scale in ('B', 'D', 'F', 'G#')),
   -- Only populated if the student explicitly consented to save this recording (see profiles.save_recordings_consent).
   recording_url text,
   student_pitch_contour jsonb not null default '[]',

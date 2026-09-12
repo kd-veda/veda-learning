@@ -12,7 +12,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { usePitchStream } from "@/hooks/usePitchStream";
 import { getDataProvider, type LessonContent } from "@/lib/data/provider";
 import type { CourseScale } from "@/lib/audio/scaleMapping";
-import { SCALE_ROOT_FREQUENCY_HZ } from "@/lib/audio/scaleMapping";
+import { COURSE_SCALES, SCALE_ROOT_FREQUENCY_HZ } from "@/lib/audio/scaleMapping";
 import { smoothPitchTrack } from "@/lib/audio/smoothing";
 import { buildReferenceCentsTrack, buildStudentCentsTrack, flattenPhraseSyllables } from "@/lib/audio/referenceTrack";
 import { scoreAttempt, encouragingMessageFor, computeSyllableFeedback, type ScoreBreakdown, type FeedbackColour } from "@/lib/audio/scoring";
@@ -261,7 +261,7 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
             <div>
               <p className="text-xs font-medium text-maroon-400">Scale</p>
               <div className="mt-1 flex gap-2">
-                {(["B", "D", "F"] as CourseScale[]).map((s) => (
+                {COURSE_SCALES.map((s) => (
                   <Button key={s} size="sm" variant={s === scale ? "primary" : "ghost"} onClick={() => setScale(s)}>
                     {s}
                   </Button>

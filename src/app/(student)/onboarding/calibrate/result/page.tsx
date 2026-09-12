@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/Card";
 import { useProfile } from "@/hooks/useProfile";
 import { getDataProvider } from "@/lib/data/provider";
-import type { CourseScale } from "@/lib/audio/scaleMapping";
+import { COURSE_SCALES, type CourseScale } from "@/lib/audio/scaleMapping";
 import type { ScaleCalibration } from "@/lib/data/types";
 
 function ResultContent() {
@@ -68,8 +68,8 @@ function ResultContent() {
         <CardDescription className="mt-2">
           You can pick a starting scale directly. You can always recalibrate later from your profile.
         </CardDescription>
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          {(["B", "D", "F"] as CourseScale[]).map((scale) => (
+        <div className="mt-6 grid grid-cols-4 gap-3">
+          {COURSE_SCALES.map((scale) => (
             <Button key={scale} size="lg" variant="ghost" onClick={() => chooseScale(scale, true)}>
               Scale {scale}
             </Button>
@@ -98,8 +98,8 @@ function ResultContent() {
         </Button>
         <details className="text-sm text-maroon-400">
           <summary className="cursor-pointer underline underline-offset-2">Choose a different scale instead</summary>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {(["B", "D", "F"] as CourseScale[]).map((scale) => (
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            {COURSE_SCALES.map((scale) => (
               <Button key={scale} size="sm" variant="ghost" onClick={() => chooseScale(scale, true)}>
                 Scale {scale}
               </Button>

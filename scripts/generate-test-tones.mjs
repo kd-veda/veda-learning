@@ -21,10 +21,13 @@ mkdirSync(outDir, { recursive: true });
 const SAMPLE_RATE = 44100;
 
 // Root frequency for each course scale (the tonic students calibrate against).
+// Mirrors src/lib/audio/scaleMapping.ts's SCALE_ROOT_FREQUENCY_HZ — kept in sync so this
+// synthetic demo stays in the same register as the platform's real reference recordings.
 const SCALE_ROOT_HZ = {
-  B: 246.94, // B3
-  D: 293.66, // D4
-  F: 349.23, // F4
+  B: 116.96,
+  D: 140.64,
+  F: 171.02,
+  "G#": 201.26,
 };
 
 // Mirrors src/content/ganapati-prarthana/index.ts seedSyllables' timing +
@@ -103,7 +106,10 @@ function buildTrackForScale(rootHz) {
 for (const [scale, rootHz] of Object.entries(SCALE_ROOT_HZ)) {
   const track = buildTrackForScale(rootHz);
   const wav = encodeWav(track, SAMPLE_RATE);
-  const filename = `placeholder-scale-${scale.toLowerCase()}.wav`;
+  // "#" is awkward in filenames/URLs, so G# becomes "gsharp" on disk (the scale value stored
+  // in the data — "G#" — is unaffected; only the placeholder audio filename is sanitised).
+  const safeScaleName = scale.toLowerCase().replace("#", "sharp");
+  const filename = `placeholder-scale-${safeScaleName}.wav`;
   writeFileSync(path.join(outDir, filename), wav);
   console.log(`Wrote public/audio/ganapati-prarthana/${filename} (${track.length} samples, root ${rootHz}Hz)`);
 }

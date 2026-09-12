@@ -12,7 +12,7 @@ import { getDataProvider, type LessonContent } from "@/lib/data/provider";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { detectPitchYin } from "@/lib/audio/pitchDetector";
 import { centsBetween } from "@/lib/audio/noteMapping";
-import { SCALE_ROOT_FREQUENCY_HZ, type CourseScale } from "@/lib/audio/scaleMapping";
+import { COURSE_SCALES, SCALE_ROOT_FREQUENCY_HZ, type CourseScale } from "@/lib/audio/scaleMapping";
 import type { Syllable } from "@/lib/data/types";
 
 const SVARA_OPTIONS: Syllable["svaraCategory"][] = ["udatta", "anudatta", "svarita", "dirgha_svarita"];
@@ -126,7 +126,7 @@ function AlignEditorContent() {
         <CardDescription>{content.lesson.title}</CardDescription>
 
         <div className="mt-4 flex gap-2">
-          {(["B", "D", "F"] as CourseScale[]).map((s) => (
+          {COURSE_SCALES.map((s) => (
             <Button key={s} size="sm" variant={s === scale ? "primary" : "ghost"} onClick={() => setScale(s)}>
               Scale {s}
             </Button>
