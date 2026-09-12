@@ -32,7 +32,12 @@ export default function CourseOverviewPage({ params }: { params: { courseId: str
       setCourse(c);
       const mods = await provider.listModules(params.courseId);
       setModules(mods);
-      const chantEntries = await Promise.all(mods.map((m) => provider.listChants(m.id)));
+      // Students only ever see published chants — admins use the same listChants
+      // call but the admin pages don't filter, so unpublished content stays
+      // editable there while staying hidden from students here.
+      const chantEntries = (await Promise.all(mods.map((m) => provider.listChants(m.id)))).map((chants) =>
+        chants.filter((c) => c.published)
+      );
       const chantMap: Record<string, Chant[]> = {};
       mods.forEach((m, i) => (chantMap[m.id] = chantEntries[i]));
       setChantsByModule(chantMap);

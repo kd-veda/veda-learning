@@ -53,7 +53,22 @@ import {
 } from "@/content/rudram-opening";
 
 const STORAGE_KEY = "veda-learning:local-db:v1";
+const SEED_VERSION_KEY = "veda-learning:local-db:seed-version";
 const GUEST_PROFILE_ID = "local-guest";
+
+/**
+ * Bump this whenever buildSeedDb()'s content changes (a chant added, a
+ * course/lesson/chant field edited in code, a chant published/unpublished,
+ * and so on). Guest mode keeps each visitor's whole app state in their own
+ * browser (IndexedDB) rather than a shared server, so without this, someone
+ * who tried the app before a content update shipped would keep seeing their
+ * old locally-saved copy forever — new lessons would never appear for them.
+ * On load, loadDb() compares this against what's saved in that visitor's
+ * browser and merges in anything new (see mergeFreshSeedContent below),
+ * while leaving their own progress (streaks, attempts, calibration, etc.)
+ * and any audio they've uploaded through the admin page untouched.
+ */
+const SEED_CONTENT_VERSION = 2;
 
 interface LocalDb {
   profiles: Profile[];
@@ -92,7 +107,7 @@ function buildSeedDb(): LocalDb {
         id: GANAPATI_COURSE_ID,
         slug: "first-steps",
         title: "First Steps in Chanting",
-        description: "A gentle introduction course, beginning with the demonstration lesson Gaṇapati Prārthanā.",
+        description: "A gentle introduction course, beginning with the opening line of the Rudram.",
         published: true,
         createdAt: now,
         updatedAt: now,
@@ -129,14 +144,73 @@ function buildSeedDb(): LocalDb {
 
 let dbPromise: Promise<LocalDb> | null = null;
 
+/**
+ * Brings an existing visitor's saved database up to date with the latest
+ * code-defined seed content, without touching anything they generated
+ * themselves. Course/module/chant/lesson/phrase/word/syllable/achievement
+ * records are content Kavir and I manage through code, so the fresh seed
+ * version wins for those (added if missing, replaced if present — this is
+ * how a title/description edit, or unpublishing a chant, reaches an
+ * existing guest). lessonAudio is different: the admin "Align audio &
+ * syllables" page lets a scale's recording be replaced by uploading a file
+ * directly in the browser, which is saved only in that visitor's local
+ * database — so for lessonAudio we only ADD newly introduced scale entries
+ * and never overwrite one that's already there, to avoid silently
+ * reverting an uploaded recording back to a code-shipped placeholder.
+ * Everything else (profiles, calibrations, attempts, streak data, earned
+ * achievements, admin roles, app config) is purely the visitor's own and
+ * is never touched here.
+ */
+function mergeFreshSeedContent(stored: LocalDb): LocalDb {
+  const fresh = buildSeedDb();
+
+  function upsertAll<T extends { id: string }>(storedItems: T[], freshItems: T[]): T[] {
+    const byId = new Map(storedItems.map((item) => [item.id, item]));
+    for (const item of freshItems) byId.set(item.id, item);
+    return Array.from(byId.values());
+  }
+
+  function addOnlyMissing<T extends { id: string }>(storedItems: T[], freshItems: T[]): T[] {
+    const existingIds = new Set(storedItems.map((item) => item.id));
+    const missing = freshItems.filter((item) => !existingIds.has(item.id));
+    return [...storedItems, ...missing];
+  }
+
+  return {
+    ...stored,
+    courses: upsertAll(stored.courses, fresh.courses),
+    modules: upsertAll(stored.modules, fresh.modules),
+    chants: upsertAll(stored.chants, fresh.chants),
+    lessons: upsertAll(stored.lessons, fresh.lessons),
+    phrases: upsertAll(stored.phrases, fresh.phrases),
+    words: upsertAll(stored.words, fresh.words),
+    syllables: upsertAll(stored.syllables, fresh.syllables),
+    achievements: upsertAll(stored.achievements, fresh.achievements),
+    lessonAudio: addOnlyMissing(stored.lessonAudio, fresh.lessonAudio),
+  };
+}
+
 async function loadDb(): Promise<LocalDb> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const stored = await idbGet<LocalDb>(STORAGE_KEY);
-      if (stored) return stored;
-      const seeded = buildSeedDb();
-      await idbSet(STORAGE_KEY, seeded);
-      return seeded;
+      const storedVersion = (await idbGet<number>(SEED_VERSION_KEY)) ?? 0;
+
+      if (!stored) {
+        const seeded = buildSeedDb();
+        await idbSet(STORAGE_KEY, seeded);
+        await idbSet(SEED_VERSION_KEY, SEED_CONTENT_VERSION);
+        return seeded;
+      }
+
+      if (storedVersion < SEED_CONTENT_VERSION) {
+        const merged = mergeFreshSeedContent(stored);
+        await idbSet(STORAGE_KEY, merged);
+        await idbSet(SEED_VERSION_KEY, SEED_CONTENT_VERSION);
+        return merged;
+      }
+
+      return stored;
     })();
   }
   return dbPromise;

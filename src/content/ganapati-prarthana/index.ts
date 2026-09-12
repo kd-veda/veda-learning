@@ -34,7 +34,10 @@ export const seedChant: Chant = {
   iast: "( PLACEHOLDER IAST TEXT — teacher-approved wording pending )",
   isPlaceholderContent: true,
   order: 1,
-  published: true,
+  // Hidden from students for now (Kavir asked to show only the real Rudram
+  // content) — left in place, unpublished, so it's ready to switch back on
+  // once real teacher-approved text/recordings for this chant arrive.
+  published: false,
 };
 
 export const seedLesson: Lesson = {
