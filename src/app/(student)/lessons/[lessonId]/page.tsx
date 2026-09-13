@@ -21,7 +21,23 @@ import {
   DEFAULT_FRAME_INTERVAL_SEC,
 } from "@/lib/audio/referenceTrack";
 import { scoreAttempt, encouragingMessageFor, computeSyllableFeedback, type ScoreBreakdown, type FeedbackColour } from "@/lib/audio/scoring";
+import type { PitchStreamFrame } from "@/lib/audio/pitchStream";
 import type { LessonMode, ScaleCalibration } from "@/lib/data/types";
+
+/**
+ * Shared by the live "trace as you go" preview (called on every incoming mic
+ * frame while capturing) and the final scoring pass — turns the raw,
+ * mic-clock-timed frames collected so far into a smoothed, phrase-clock-timed
+ * track plus its cents-relative-to-tonic version for drawing.
+ */
+function computeStudentTrack(rawFrames: PitchStreamFrame[], phraseStartTimeSec: number, tonicHz: number) {
+  if (rawFrames.length === 0) return { smoothed: [], studentCents: [] as Array<number | null> };
+  const firstTime = rawFrames[0].timeSec;
+  const normalised = rawFrames.map((f) => ({ ...f, timeSec: phraseStartTimeSec + (f.timeSec - firstTime) }));
+  const smoothed = smoothPitchTrack(normalised);
+  const studentCents = buildStudentCentsTrack(smoothed, tonicHz);
+  return { smoothed, studentCents };
+}
 
 const MODES: Array<{ id: LessonMode; label: string; description: string }> = [
   { id: "listen", label: "Listen", description: "Hear the full recording while the words highlight." },
@@ -152,6 +168,10 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       const audio = audioRef.current;
       if (!audio) return;
       runGetReady(async () => {
+        // Discard whatever the mic picked up during the "get ready" pause itself —
+        // otherwise those few seconds of pre-roll silence would count as the start
+        // of the phrase and throw off timing/scoring.
+        pitchStream.clearFrames();
         setStatus("capturing");
         audio.currentTime = phrase.startTimeSec;
         audio.playbackRate = mode === "slow_practice" ? slowRate : 1;
@@ -175,6 +195,7 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       await pitchStream.start();
       pitchStream.clearFrames();
       runGetReady(() => {
+        pitchStream.clearFrames(); // discard mic pickup from the "get ready" pause itself
         setStatus("capturing");
         startCountdownCapture(phraseDurationSec);
       });
@@ -204,6 +225,7 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       await pitchStream.start();
       pitchStream.clearFrames();
       runGetReady(() => {
+        pitchStream.clearFrames(); // discard mic pickup from the "get ready" pause itself
         setStatus("capturing");
         setCurrentTimeSec(phrase?.startTimeSec ?? 0);
         startCountdownCapture(phraseDurationSec);
@@ -225,10 +247,7 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       setStatus("idle");
       return;
     }
-    const firstTime = rawFrames[0].timeSec;
-    const normalised = rawFrames.map((f) => ({ ...f, timeSec: phrase.startTimeSec + (f.timeSec - firstTime) }));
-    const smoothed = smoothPitchTrack(normalised);
-    const studentCents = buildStudentCentsTrack(smoothed, tonicHz);
+    const { smoothed, studentCents } = computeStudentTrack(rawFrames, phrase.startTimeSec, tonicHz);
 
     const score = scoreAttempt(referenceCents, studentCents, referenceCents.length);
     const message = encouragingMessageFor(score);
@@ -262,6 +281,18 @@ export default function LessonPlayerPage({ params }: { params: { lessonId: strin
       );
     }
   }
+
+  // Redraws the neon student trace on every incoming mic frame while capturing, so it
+  // grows alongside the teacher's line in real time as the student chants — rather than
+  // only appearing all at once after scoring finishes.
+  useEffect(() => {
+    if (status !== "capturing" || !phrase) return;
+    const rawFrames = pitchStream.getFrames();
+    if (rawFrames.length === 0) return;
+    const { studentCents } = computeStudentTrack(rawFrames, phrase.startTimeSec, tonicHz);
+    setLiveStudentCents(studentCents);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pitchStream.latestFrame, status]);
 
   useEffect(() => {
     return () => {
