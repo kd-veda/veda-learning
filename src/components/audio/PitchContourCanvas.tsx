@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { classifyPitchDifference, DEFAULT_PITCH_TOLERANCE, type PitchTolerance } from "@/lib/audio/scoring";
 import { DEFAULT_FRAME_INTERVAL_SEC } from "@/lib/audio/referenceTrack";
 
 export interface PitchContourCanvasProps {
@@ -9,7 +8,6 @@ export interface PitchContourCanvasProps {
   referenceCents: Array<number | null>;
   /** Student's live/attempt trace, same units, may be shorter (fills in as practice proceeds). */
   studentCents: Array<number | null>;
-  tolerance?: PitchTolerance;
   height?: number;
   /**
    * Current playback/recording position, in seconds from the start of the
@@ -22,17 +20,47 @@ export interface PitchContourCanvasProps {
 }
 
 const CENTS_RANGE = 300; // display window: +/-300 cents around 0, generous for a chanting phrase
+const STUDENT_TRACE_COLOUR = "#39FF14"; // a vivid, glowing "neon" green — asked for by name, and it reads clearly against the warm ivory/teal palette
+// Brief dropouts in the mic signal (a soft consonant, a tiny pause) are bridged so the
+// student's line reads as one continuous glowing trace rather than a dotted, broken one —
+// a real silence (not chanting yet, or stopped) still shows as a gap once it runs longer
+// than this many frames.
+const MAX_BRIDGED_GAP_FRAMES = 8;
+
+/** Fills short runs of nulls by interpolating between the values on either side, leaving longer gaps (real silence) untouched. */
+function bridgeShortGaps(values: Array<number | null>, maxGap: number): Array<number | null> {
+  const result = [...values];
+  let i = 0;
+  while (i < result.length) {
+    if (result[i] !== null) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < result.length && result[j] === null) j++;
+    const gapLen = j - i;
+    const before = i > 0 ? result[i - 1] : null;
+    const after = j < result.length ? result[j] : null;
+    if (gapLen <= maxGap && before !== null && after !== null) {
+      for (let k = i; k < j; k++) {
+        const t = (k - i + 1) / (gapLen + 1);
+        result[k] = before + (after - before) * t;
+      }
+    }
+    i = j;
+  }
+  return result;
+}
 
 /**
  * Draws the teacher's pitch contour as a dashed guide line and the
- * student's trace as a solid line coloured green/amber/red per point,
- * grey where there's no confident signal — the visual heart of "tracing
- * paper for chanting".
+ * student's trace as a solid, glowing neon line right on top of it, from
+ * the start of the phrase to the end — the visual heart of "tracing paper
+ * for chanting".
  */
 export function PitchContourCanvas({
   referenceCents,
   studentCents,
-  tolerance = DEFAULT_PITCH_TOLERANCE,
   height = 160,
   playheadTimeSec = null,
   frameIntervalSec = DEFAULT_FRAME_INTERVAL_SEC,
@@ -87,21 +115,31 @@ export function PitchContourCanvas({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Student trace — solid, coloured per-segment by closeness to the reference at that index.
+    // Student trace — one continuous glowing neon line, tracing directly over the
+    // teacher's guide from the start of the phrase to the end.
+    const studentDrawable = bridgeShortGaps(studentCents, MAX_BRIDGED_GAP_FRAMES);
+    ctx.strokeStyle = STUDENT_TRACE_COLOUR;
+    ctx.shadowColor = STUDENT_TRACE_COLOUR;
+    ctx.shadowBlur = 8;
     ctx.lineWidth = 3;
-    for (let i = 1; i < studentCents.length; i++) {
-      const prev = studentCents[i - 1];
-      const curr = studentCents[i];
-      if (prev === null || curr === null) continue;
-      const refAtI = referenceCents[Math.min(i, referenceCents.length - 1)] ?? null;
-      const diff = refAtI !== null ? curr - refAtI : null;
-      const colour = classifyPitchDifference(diff, tolerance);
-      ctx.strokeStyle = { green: "#3E8E5A", amber: "#D9931F", red: "#C24B4B", grey: "#9A958D" }[colour];
-      ctx.beginPath();
-      ctx.moveTo((i - 1) * xStep, yFor(prev));
-      ctx.lineTo(i * xStep, yFor(curr));
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    let studentStarted = false;
+    studentDrawable.forEach((cents, i) => {
+      const x = i * xStep;
+      if (cents === null) {
+        studentStarted = false;
+        return;
+      }
+      const y = yFor(cents);
+      if (!studentStarted) {
+        ctx.moveTo(x, y);
+        studentStarted = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0; // reset so the glow doesn't bleed into the markers drawn below
 
     // "Start chanting here" marker — the first frame where the teacher's
     // reference has actual pitch data (before that is the lead-in silence).
@@ -137,32 +175,23 @@ export function PitchContourCanvas({
         ctx.stroke();
       }
     }
-  }, [referenceCents, studentCents, tolerance, height, playheadTimeSec, frameIntervalSec]);
+  }, [referenceCents, studentCents, height, playheadTimeSec, frameIntervalSec]);
 
   return (
     <div>
-      <canvas ref={canvasRef} style={{ width: "100%", height }} role="img" aria-label="Pitch contour comparison: teacher (dashed teal) vs. your voice (solid, colour-coded), with a marker for where to start chanting and a moving line for the current position" />
+      <canvas ref={canvasRef} style={{ width: "100%", height }} role="img" aria-label="Pitch contour comparison: teacher's guide (dashed teal) vs. your voice (a glowing neon-green trace), with a marker for where to start chanting and a moving line for the current position" />
       <div className="mt-2 flex flex-wrap gap-4 text-xs text-maroon-400">
         <span className="flex items-center gap-1">
           <span className="h-0.5 w-4 border-t-2 border-dashed border-teal-500" /> Teacher
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-0.5 w-4" style={{ backgroundColor: STUDENT_TRACE_COLOUR, boxShadow: `0 0 4px ${STUDENT_TRACE_COLOUR}` }} /> Your voice
         </span>
         <span className="flex items-center gap-1">
           <span className="h-3 w-0.5 border-l-2 border-dashed border-saffron-600" /> Start chanting
         </span>
         <span className="flex items-center gap-1">
           <span className="h-3 w-0.5 bg-maroon-500" /> Now
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-feedback-green" /> Close
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-feedback-amber" /> A little off
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-feedback-red" /> Far off
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-feedback-grey" /> No signal
         </span>
       </div>
     </div>
